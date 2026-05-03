@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+from pathlib import Path
 
 # from fastapi.responses import JSONResponse
 import pandas as pd
@@ -12,6 +13,7 @@ from src.pipeline import DemandForecastPipeline
 # Initialize FastAPI
 app = FastAPI(title="Demand Forecasting API")
 
+
 # Add CORS middleware for Streamlit access
 app.add_middleware(
     CORSMiddleware,
@@ -22,8 +24,9 @@ app.add_middleware(
 )
 
 # Initialize pipeline
-model_path = "/models/xgboost_hourly_model.pkl"
-features_path = "/models/features.pkl"
+BASE_DIR = Path.cwd()
+model_path = BASE_DIR / "models" / "xgboost_hourly_model.pkl"
+features_path = BASE_DIR / "models" / "features.pkl"
 
 pipeline = DemandForecastPipeline(model_path, features_path)
 
@@ -72,3 +75,33 @@ async def upload_file(file: UploadFile = File(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Upload failed: {str(e)}")
+
+
+@app.post("/batch-predict")
+async def batch_predict(file: UploadFile = File(...)):
+    """
+    Pass
+    """
+    if not pipeline:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+
+    try:
+        filename = file.filename.lower()
+        content = await file.read()
+
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content))
+        elif filename.endswith(".json"):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format.")
+
+        result = pipeline.predict(df)
+
+        if "error" in result and not result.get("success"):
+            raise HTTPException(status_code=400, detail=result["error"])
+
+        return result
+
+    except Exception as e:
+        raise e
